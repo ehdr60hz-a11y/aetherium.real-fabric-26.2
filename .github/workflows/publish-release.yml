@@ -2,7 +2,7 @@ name: publish-aetherium-release
 
 on:
   workflow_run:
-    workflows: ["build-aetherium"]
+    workflows: ["build-aetherium-real"]
     types: [completed]
 
 permissions:
