@@ -1,0 +1,201 @@
+name: build-aetherium
+# Self-contained: this single file creates the whole mod project and builds it.
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.5.1
+      - name: Create project and build
+        run: |
+          set -e
+          mkdir -p src/main/java/com/aetherium src/main/resources tools
+          cat > build.gradle <<'AETHERIUM_EOF_0'
+          plugins {
+          	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+          	id 'maven-publish'
+          }
+
+          version = project.mod_version
+          group = project.maven_group
+
+          base {
+          	archivesName = project.archives_base_name
+          }
+
+          repositories {
+          	// Only needed for third-party mods; Loom adds the Minecraft/Fabric repositories itself.
+          }
+
+          dependencies {
+          	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+          	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+          	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+          }
+
+          processResources {
+          	inputs.property "version", project.version
+          	filesMatching("fabric.mod.json") {
+          		expand "version": inputs.properties.version
+          	}
+          }
+
+          tasks.withType(JavaCompile).configureEach {
+          	it.options.release = 25
+          }
+
+          java {
+          	withSourcesJar()
+          	sourceCompatibility = JavaVersion.VERSION_25
+          	targetCompatibility = JavaVersion.VERSION_25
+          }
+          AETHERIUM_EOF_0
+          cat > gradle.properties <<'AETHERIUM_EOF_1'
+          org.gradle.jvmargs=-Xmx2G
+          org.gradle.parallel=true
+          # IntelliJ is not fully compatible with the configuration cache yet
+          org.gradle.configuration-cache=false
+
+          # Fabric (check the latest values on https://fabricmc.net/develop)
+          minecraft_version=26.2
+          loader_version=0.19.3
+          loom_version=1.17-SNAPSHOT
+          fabric_api_version=0.150.1+26.2
+
+          # Mod
+          mod_version=0.1.0
+          maven_group=com.aetherium
+          archives_base_name=aetherium
+          AETHERIUM_EOF_1
+          cat > settings.gradle <<'AETHERIUM_EOF_2'
+          pluginManagement {
+          	repositories {
+          		maven { url = 'https://maven.fabricmc.net/' }
+          		gradlePluginPortal()
+          	}
+          }
+          AETHERIUM_EOF_2
+          cat > tools/gen_resources.py <<'AETHERIUM_EOF_8'
+          #!/usr/bin/env python3
+          """Generates all data/asset JSON + placeholder 16x16 textures for Aetherium.
+          Run from anywhere:  python3 tools/gen_resources.py
+          Re-running overwrites generated files. Edit numbers here to rebalance."""
+          import json, os, random, struct, zlib
+
+          HERE = os.path.dirname(os.path.abspath(__file__))
+          RES = os.path.normpath(os.path.join(HERE, "..", "src", "main", "resources"))
+          MOD = "aetherium"
+
+          def write_json(rel, data):
+              p = os.path.join(RES, rel)
+              os.makedirs(os.path.dirname(p), exist_ok=True)
+              with open(p, "w", encoding="utf-8") as f:
+                  json.dump(data, f, indent=2, ensure_ascii=False)
+                  f.write("\n")
+
+          def write_png(rel, px):
+              raw = b"".join(b"\x00" + b"".join(bytes(c) for c in row) for row in px)
+              def chunk(t, d):
+                  return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+              data = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+              p = os.path.join(RES, rel)
+              os.makedirs(os.path.dirname(p), exist_ok=True)
+              with open(p, "wb") as f:
+                  f.write(data)
+
+          def clamp(v): return max(0, min(255, int(v)))
+          def mix(c, k): return tuple(clamp(v * k) for v in c)
+          def light(c, k): return tuple(clamp(v + (255 - v) * k) for v in c)
+          def pal(base): return {"H": light(base, 0.40), "M": base, "S": mix(base, 0.70), "O": mix(base, 0.38)}
+
+          def shaded(mask, base):
+              P = pal(base); g = [[(0,0,0,0) for _ in range(16)] for _ in range(16)]
+              for y in range(16):
+                  for x in range(16):
+                      if not mask(x,y): continue
+                      edge = any(not (0 <= nx < 16 and 0 <= ny < 16 and mask(nx,ny)) for nx,ny in ((x+1,y),(x-1,y),(x,y+1),(x,y-1)))
+                      c = P["O"] if edge else (P["H"] if x+y < 14 else (P["M"] if x+y < 19 else P["S"]))
+                      g[y][x] = c + (255,)
+              return g
+
+          def blob_mask(seed):
+              rnd = random.Random(seed); noise = [[rnd.random()*0.30 for _ in range(16)] for _ in range(16)]
+              return lambda x,y: ((x-7.5)/6.2)**2 + ((y-8)/5.2)**2 + noise[y][x] <= 1.0
+          GEM=lambda x,y: abs(x-7.5)/5.5 + abs(y-8)/6.5 <= 1
+          CRYSTAL=lambda x,y: abs(x-7.5)/3.8 + abs(y-8)/7.2 <= 1
+          SHARDS=lambda x,y: any(abs(x-cx)+abs(y-cy)<=r for cx,cy,r in ((4,5,3),(10,4,3),(8,11,4)))
+          INGOT_T=["................","................","................","................","......OOOOOOO...",".....OHHHHHHMO..","....OHHMMMMMMSO.","...OHMMMMMMMSSO.","..OOMMMMMMMSSO..","..OSSMMMMMSSO...","...OSSSSSSSO....","....OOOOOOOO....","................","................","................","................"]
+          def ingot(base):
+              P=pal(base); g=[[(0,0,0,0) for _ in range(16)] for _ in range(16)]
+              for y,row in enumerate(INGOT_T):
+                  for x,ch in enumerate(row):
+                      if ch!=".": g[y][x]=P[ch]+(255,)
+              return g
+          def pickaxe():
+              g=[[(0,0,0,0) for _ in range(16)] for _ in range(16)]; wood,wood_l=(120,84,48),(160,120,72)
+              for x in range(2,12):
+                  g[15-x][x]=wood+(255,)
+                  if x+1<16: g[15-x][x-1 if x>2 else x]=wood_l+(255,)
+              head=[(4,4),(5,3),(6,2),(7,2),(8,2),(9,2),(10,2),(11,3),(12,4),(13,5),(13,6),(6,3),(7,3),(10,3),(11,4),(12,5)]
+              for x,y in head:g[y][x]=(96,104,112,255)
+              for x,y in [(8,3),(9,3),(8,4),(9,4)]:g[y][x]=(64,224,208,255)
+              return g
+          def ore_tex(base,specks,seed):
+              rnd=random.Random(seed); g=[[None]*16 for _ in range(16)]
+              for y in range(16):
+                  for x in range(16):
+                      v=rnd.randint(-14,14); g[y][x]=(clamp(base[0]+v),clamp(base[1]+v),clamp(base[2]+v),255)
+              for _ in range(6):
+                  cx,cy=rnd.randint(2,13),rnd.randint(2,13)
+                  for dx,dy in [(0,0),(1,0),(0,1),(1,1),(-1,0)][:rnd.randint(2,5)]:
+                      x,y=cx+dx,cy+dy
+                      if 0<=x<16 and 0<=y<16:g[y][x]=rnd.choice(specks)+(255,)
+              return g
+          TEAL,ORANGE,VIOLET=(64,200,190),(235,120,40),(150,90,235)
+          ITEMS={
+          "raw_aetherite_residue":("Raw Aetherite Residue","پسماند خام اتریت",shaded(blob_mask(11),TEAL)),"fractured_residue":("Fractured Residue","پسماند شکسته",shaded(SHARDS,(90,120,120))),"purified_aetherite":("Purified Aetherite","اتریت خالص‌شده",shaded(GEM,(130,240,225))),"nether_catalyst":("Nether Catalyst","کاتالیزور نِدر",shaded(CRYSTAL,ORANGE)),"end_stabilizer":("End Stabilizer","تثبیت‌کننده‌ی اند",shaded(CRYSTAL,VIOLET)),"dense_alloy":("Dense Aetherium Alloy","آلیاژ اتریوم چگال",ingot((120,125,140))),"light_alloy":("Light Aetherium Alloy","آلیاژ اتریوم سبک",ingot((190,235,245))),"conductive_alloy":("Conductive Aetherium Alloy","آلیاژ اتریوم رسانا",ingot((220,140,80))),"stable_alloy":("Stable Aetherium Alloy","آلیاژ اتریوم پایدار",ingot((140,110,220))),"resonant_alloy":("Resonant Aetherium Alloy","آلیاژ اتریوم تشدیدی",ingot((70,220,200))),"resonance_extractor":("Resonance Extractor","استخراج‌گر تشدیدی",pickaxe())}
+          BLOCKS={"aetherite_residue_ore":("Aetherite Residue Ore","سنگ پسماند اتریت",ore_tex((58,60,68),[TEAL,light(TEAL,0.5)],101)),"nether_catalyst_vein":("Nether Catalyst Vein","رگه‌ی کاتالیزور نِدر",ore_tex((84,42,44),[ORANGE,(255,200,90)],202)),"end_stabilizer_deposit":("End Stabilizer Deposit","ذخیره‌ی تثبیت‌کننده‌ی اند",ore_tex((214,218,150),[VIOLET,light(VIOLET,0.5)],303))}
+          HANDHELD={"resonance_extractor"}
+          def main():
+              lang_en,lang_fa={},{}
+              for iid,(en,fa,tex) in ITEMS.items():
+                  lang_en[f"item.{MOD}.{iid}"]=en;lang_fa[f"item.{MOD}.{iid}"]=fa;write_png(f"assets/{MOD}/textures/item/{iid}.png",tex);write_json(f"assets/{MOD}/models/item/{iid}.json",{"parent":"minecraft:item/handheld" if iid in HANDHELD else "minecraft:item/generated","textures":{"layer0":f"{MOD}:item/{iid}"}});write_json(f"assets/{MOD}/items/{iid}.json",{"model":{"type":"minecraft:model","model":f"{MOD}:item/{iid}"}})
+              for bid,(en,fa,tex) in BLOCKS.items():
+                  lang_en[f"block.{MOD}.{bid}"]=en;lang_fa[f"block.{MOD}.{bid}"]=fa;write_png(f"assets/{MOD}/textures/block/{bid}.png",tex);write_json(f"assets/{MOD}/models/block/{bid}.json",{"parent":"minecraft:block/cube_all","textures":{"all":f"{MOD}:block/{bid}"}});write_json(f"assets/{MOD}/blockstates/{bid}.json",{"variants":{"":{"model":f"{MOD}:block/{bid}"}}});write_json(f"assets/{MOD}/items/{bid}.json",{"model":{"type":"minecraft:model","model":f"{MOD}:block/{bid}"}})
+              write_json(f"assets/{MOD}/lang/en_us.json",lang_en);write_json(f"assets/{MOD}/lang/fa_ir.json",lang_fa)
+              write_json("data/minecraft/tags/block/mineable/pickaxe.json",{"replace":False,"values":[f"{MOD}:{b}" for b in BLOCKS]});write_json("data/minecraft/tags/block/needs_iron_tool.json",{"replace":False,"values":[f"{MOD}:aetherite_residue_ore"]});write_json("data/minecraft/tags/block/needs_diamond_tool.json",{"replace":False,"values":[f"{MOD}:{b}" for b in ["nether_catalyst_vein","end_stabilizer_deposit"]]})
+              survive=[{"condition":"minecraft:survives_explosion"}]
+              def count(lo,hi):return [{"function":"minecraft:set_count","count":{"type":"minecraft:uniform","min":lo,"max":hi}}]
+              write_json(f"data/{MOD}/loot_table/blocks/aetherite_residue_ore.json",{"type":"minecraft:block","pools":[{"rolls":1,"conditions":survive,"entries":[{"type":"minecraft:alternatives","children":[{"type":"minecraft:item","name":f"{MOD}:raw_aetherite_residue","conditions":[{"condition":"minecraft:match_tool","predicate":{"items":[f"{MOD}:resonance_extractor"]}}],"functions":count(1,2)},{"type":"minecraft:item","name":f"{MOD}:fractured_residue"}]}]}]})
+              for bid,item,lo,hi in (("nether_catalyst_vein","nether_catalyst",1,2),("end_stabilizer_deposit","end_stabilizer",1,2)):write_json(f"data/{MOD}/loot_table/blocks/{bid}.json",{"type":"minecraft:block","pools":[{"rolls":1,"conditions":survive,"entries":[{"type":"minecraft:item","name":f"{MOD}:{item}","functions":count(lo,hi)}]}]})
+              P,C,S=f"{MOD}:purified_aetherite",f"{MOD}:nether_catalyst",f"{MOD}:end_stabilizer"
+              def shapeless(name,ings,result,cat="misc",n=1):write_json(f"data/{MOD}/recipe/{name}.json",{"type":"minecraft:crafting_shapeless","category":cat,"ingredients":ings,"result":{"id":result,"count":n}})
+              write_json(f"data/{MOD}/recipe/resonance_extractor.json",{"type":"minecraft:crafting_shaped","category":"equipment","pattern":["DED","CNC","RSR"],"key":{"D":"minecraft:diamond","E":"minecraft:echo_shard","C":"minecraft:copper_ingot","N":"minecraft:netherite_scrap","R":"minecraft:redstone","S":"minecraft:stick"},"result":{"id":f"{MOD}:resonance_extractor","count":1}})
+              write_json(f"data/{MOD}/recipe/purified_aetherite_from_raw.json",{"type":"minecraft:blasting","category":"misc","ingredient":f"{MOD}:raw_aetherite_residue","result":{"id":P,"count":1},"experience":1.0,"cookingtime":300})
+              shapeless("raw_from_fractured",[f"{MOD}:fractured_residue"]*5+["minecraft:copper_ingot"],f"{MOD}:raw_aetherite_residue")
+              shapeless("dense_alloy",[P,P,C,S,"minecraft:netherite_scrap"],f"{MOD}:dense_alloy");shapeless("light_alloy",[P,C,S,"minecraft:amethyst_shard","minecraft:quartz"],f"{MOD}:light_alloy");shapeless("conductive_alloy",[P,C,S,"minecraft:copper_ingot","minecraft:copper_ingot"],f"{MOD}:conductive_alloy");shapeless("stable_alloy",[P,C,S,S,"minecraft:obsidian"],f"{MOD}:stable_alloy");shapeless("resonant_alloy",[P,C,S,"minecraft:echo_shard","minecraft:redstone"],f"{MOD}:resonant_alloy")
+              def ore_cfg(name,block,size,discard,targets):write_json(f"data/{MOD}/worldgen/configured_feature/{name}.json",{"type":"minecraft:ore","config":{"size":size,"discard_chance_on_air_exposure":discard,"targets":[{"state":{"Name":f"{MOD}:{block}"},"target":t} for t in targets]}})
+              def placed(name,placement):write_json(f"data/{MOD}/worldgen/placed_feature/{name}.json",{"feature":f"{MOD}:{name}","placement":placement})
+              tag=lambda t:{"predicate_type":"minecraft:tag_match","tag":t};blk=lambda b:{"predicate_type":"minecraft:block_match","block":b};uniform=lambda lo,hi:{"type":"minecraft:height_range","height":{"type":"minecraft:uniform","min_inclusive":{"absolute":lo},"max_inclusive":{"absolute":hi}}}
+              ore_cfg("aetherite_residue_ore","aetherite_residue_ore",3,0.5,[tag("minecraft:deepslate_ore_replaceables"),blk("minecraft:tuff")]);placed("aetherite_residue_ore",[{"type":"minecraft:rarity_filter","chance":5},{"type":"minecraft:count","count":1},{"type":"minecraft:in_square"},uniform(-64,-16),{"type":"minecraft:biome"}])
+              ore_cfg("nether_catalyst_vein","nether_catalyst_vein",3,0.2,[tag("minecraft:base_stone_nether")]);placed("nether_catalyst_vein",[{"type":"minecraft:count","count":3},{"type":"minecraft:in_square"},uniform(10,120),{"type":"minecraft:biome"}])
+              ore_cfg("end_stabilizer_deposit","end_stabilizer_deposit",4,0.0,[blk("minecraft:end_stone")]);placed("end_stabilizer_deposit",[{"type":"minecraft:count","count":2},{"type":"minecraft:in_square"},uniform(0,100),{"type":"minecraft:biome"}])
+              print("Resources generated in",RES)
+          if __name__=="__main__":main()
+          AETHERIUM_EOF_8
+          python3 tools/gen_resources.py
+          gradle build --no-daemon
+          ls -la build/libs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aetherium-jar
+          path: build/libs/aetherium-0.1.0.jar
