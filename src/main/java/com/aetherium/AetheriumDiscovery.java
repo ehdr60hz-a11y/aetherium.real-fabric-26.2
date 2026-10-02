@@ -18,7 +18,7 @@ public final class AetheriumDiscovery {
     public static final Item ANCIENT_MEMORY_FRAGMENT = Registry.register(
             BuiltInRegistries.ITEM,
             ANCIENT_MEMORY_FRAGMENT_KEY,
-            new Item.Properties().setId(ANCIENT_MEMORY_FRAGMENT_KEY)
+            new Item(new Item.Properties().setId(ANCIENT_MEMORY_FRAGMENT_KEY))
     );
 
     private AetheriumDiscovery() {}
