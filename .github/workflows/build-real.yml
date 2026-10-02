@@ -1,4 +1,5 @@
 name: build-aetherium-real
+
 on:
   workflow_dispatch:
   push:
@@ -9,29 +10,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Java 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '25'
+
       - name: Setup Gradle 9.5.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.5.1'
+
       - name: Generate resources
         run: python3 tools/gen_resources.py
+
       - name: Generate advanced Aetherium content
         run: python3 tools/gen_advanced_resources.py
+
       - name: Build
         run: gradle build --no-daemon
-      - name: Verify Fabric metadata
+
+      - name: Verify the actual mod jar
         run: |
-          set -e
-          test -f build/libs/aetherium-0.1.0.jar
-          unzip -l build/libs/aetherium-0.1.0.jar | grep -F 'fabric.mod.json'
-          unzip -p build/libs/aetherium-0.1.0.jar fabric.mod.json | python3 -m json.tool >/dev/null
+          set -euo pipefail
+          JAR=build/libs/aetherium-0.1.0.jar
+          test -s "$JAR"
+          unzip -l "$JAR" | grep -F 'fabric.mod.json'
+          unzip -l "$JAR" | grep -F 'com/aetherium/Aetherium.class'
+          unzip -l "$JAR" | grep -F 'assets/aetherium/'
+          unzip -l "$JAR" | grep -F 'data/aetherium/'
+          unzip -p "$JAR" fabric.mod.json | python3 -m json.tool >/dev/null
+          unzip -p "$JAR" fabric.mod.json | grep -F '"id": "aetherium"'
+          cp "$JAR" build/libs/aetherium-fabric-26.2.jar
+          ls -lh build/libs/aetherium-0.1.0.jar build/libs/aetherium-fabric-26.2.jar
+
       - name: Upload jar
         uses: actions/upload-artifact@v4
         with:
           name: aetherium-jar
-          path: build/libs/aetherium-0.1.0.jar
+          path: |
+            build/libs/aetherium-0.1.0.jar
+            build/libs/aetherium-fabric-26.2.jar
