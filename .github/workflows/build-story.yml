@@ -1,0 +1,48 @@
+name: build-aetherium-story
+
+on:
+  workflow_dispatch:
+  push:
+    paths-ignore:
+      - '.github/workflows/build-story.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.5.1
+      - name: Recreate the verified base project
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import textwrap
+
+          workflow = Path('.github/workflows/build.yml').read_text(encoding='utf-8')
+          marker = '        run: |\n'
+          if marker not in workflow:
+              raise SystemExit('Could not find the base build script in build.yml')
+          script = workflow.split(marker, 1)[1].split('\n      - uses:', 1)[0]
+          script = textwrap.dedent(script)
+          script = script.replace('          python3 tools/gen_resources.py\n', '          python3 tools/gen_resources.py\n          python3 tools/apply_story_phase1.py\n')
+          script = script.replace('          gradle build --no-daemon\n          ls -la build/libs\n', '          gradle build --no-daemon\n          ls -la build/libs\n')
+          Path('/tmp/aetherium_base.sh').write_text(script, encoding='utf-8')
+          subprocess.run(['bash', '/tmp/aetherium_base.sh'], check=True)
+          PY
+      - name: Build story version
+        run: gradle build --no-daemon
+      - name: Show jar
+        run: ls -la build/libs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aetherium-story-jar
+          path: build/libs/aetherium-0.1.0.jar
