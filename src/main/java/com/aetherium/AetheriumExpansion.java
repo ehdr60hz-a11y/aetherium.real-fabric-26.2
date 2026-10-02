@@ -22,7 +22,7 @@ import net.minecraft.world.item.ToolMaterial;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.BlockBehaviour;
+import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
@@ -107,7 +107,7 @@ public final class AetheriumExpansion {
         ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, Aetherium.id(name));
         Block block = Registry.register(BuiltInRegistries.BLOCK, key, factory.apply(properties.setId(key)));
         Registry.register(BuiltInRegistries.ITEM, itemKey,
-                new Item.Properties().useBlockDescriptionPrefix().setId(itemKey));
+                new net.minecraft.world.item.BlockItem(block, new Item.Properties().useBlockDescriptionPrefix().setId(itemKey)));
         return block;
     }
 
