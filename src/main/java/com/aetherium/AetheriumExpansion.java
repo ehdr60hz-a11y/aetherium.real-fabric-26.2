@@ -8,7 +8,6 @@ import java.util.function.Function;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -17,10 +16,8 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ToolMaterial;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.level.Level;
@@ -110,7 +107,7 @@ public final class AetheriumExpansion {
         ResourceKey<Item> itemKey = ResourceKey.create(Registries.ITEM, Aetherium.id(name));
         Block block = Registry.register(BuiltInRegistries.BLOCK, key, factory.apply(properties.setId(key)));
         Registry.register(BuiltInRegistries.ITEM, itemKey,
-                new Item.Properties().useBlockDescriptionPrefix().setId(itemKey).createBlockItem(block));
+                new Item.Properties().useBlockDescriptionPrefix().setId(itemKey));
         return block;
     }
 
