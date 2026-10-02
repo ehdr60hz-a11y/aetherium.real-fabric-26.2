@@ -18,6 +18,8 @@ public class Aetherium implements ModInitializer {
 		ModBlocks.initialize();
 		ModItems.initialize();
 		ModWorldgen.initialize();
-		LOGGER.info("Aetherium Phase 1 loaded");
+		AetheriumDiscovery.initialize();
+		AetheriumExpansion.initialize();
+		LOGGER.info("Aetherium discovery and endgame systems loaded");
 	}
 }
