@@ -22,12 +22,19 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify downloaded jar
+        run: |
+          set -euo pipefail
+          test -s dist/aetherium-fabric-26.2.jar
+          unzip -l dist/aetherium-fabric-26.2.jar | grep -F 'fabric.mod.json'
+          unzip -l dist/aetherium-fabric-26.2.jar | grep -F 'com/aetherium/Aetherium.class'
+
       - name: Create or update latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          set -e
+          set -euo pipefail
           if ! gh release view latest --repo "$GH_REPO" >/dev/null 2>&1; then
             gh release create latest \
               --repo "$GH_REPO" \
@@ -36,6 +43,6 @@ jobs:
               --notes "Latest successful Aetherium build for Minecraft 26.2 / Fabric." \
               --latest
           fi
-          gh release upload latest dist/aetherium-0.1.0.jar \
+          gh release upload latest dist/aetherium-fabric-26.2.jar \
             --repo "$GH_REPO" \
             --clobber
