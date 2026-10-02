@@ -23,7 +23,7 @@ jobs:
       - name: Generate advanced Aetherium content
         run: python3 tools/gen_advanced_resources.py
       - name: Build
-        run: gradle remapJar --no-daemon
+        run: gradle build --no-daemon
       - name: Verify Fabric metadata
         run: |
           set -e
