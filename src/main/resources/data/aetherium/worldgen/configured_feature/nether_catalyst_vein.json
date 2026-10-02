@@ -1,0 +1,1 @@
+{"type":"minecraft:ore","config":{"size":3,"discard_chance_on_air_exposure":0.2,"targets":[{"state":{"Name":"aetherium:nether_catalyst_vein"},"target":{"predicate_type":"minecraft:tag_match","tag":"minecraft:base_stone_nether"}}]}}
